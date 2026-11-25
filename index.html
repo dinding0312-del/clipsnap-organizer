@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ClipSnap Vault — 螢幕截圖與剪貼簿智慧整理小工具</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <!-- 頂部導覽列 -->
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-logo" aria-hidden="true">CS</div>
+        <div>
+          <h1>ClipSnap Vault</h1>
+          <p class="subtitle">螢幕截圖 &amp; 剪貼簿自動分類・標註・單檔匯出工作台</p>
+        </div>
+      </div>
+
+      <div class="topbar-actions">
+        <button id="btnCaptureScreen" class="btn btn-primary" title="使用瀏覽器擷取螢幕或視窗畫面">
+          <span>擷取螢幕</span>
+        </button>
+        <button id="btnPasteClipboard" class="btn btn-secondary" title="讀取目前剪貼簿內容 (或直接按 Ctrl+V)">
+          <span>讀取剪貼簿</span>
+        </button>
+        <label class="btn btn-secondary file-upload-btn" title="匯入本地圖片或文字檔">
+          <span>匯入檔案</span>
+          <input id="fileInput" type="file" accept="image/*,.txt,.md,.json,.js,.py,.html,.css" multiple hidden />
+        </label>
+        <button id="btnNewNote" class="btn btn-ghost" title="手動新增文字或程式碼筆記">
+          <span>+ 新增筆記</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- 快速操作提示橫幅 / 拖放區 -->
+    <section id="dropZone" class="drop-banner" aria-label="快速貼上與拖放區">
+      <div class="drop-banner-left">
+        <span class="kbd">Ctrl + V</span>
+        <span>在頁面任意處直接貼上 <strong>螢幕截圖 / 文字 / 程式碼 / 網址</strong>，或將檔案拖曳至此。所有資料僅儲存於本機瀏覽器。</span>
+      </div>
+      <div class="drop-banner-right">
+        <button id="btnLoadDemo" class="btn btn-sm btn-ghost">載入範例</button>
+        <button id="btnExportMarkdown" class="btn btn-sm btn-ghost" title="將所有文字、連結與程式碼匯出為 Markdown">匯出筆記 MD</button>
+        <button id="btnClearAll" class="btn btn-sm btn-danger-ghost">清空全部</button>
+      </div>
+    </section>
+
+    <!-- 主內容區：左側篩選 + 右側卡片網格 -->
+    <div class="workspace">
+      <aside class="sidebar">
+        <div class="search-box">
+          <input id="searchInput" type="search" placeholder="搜尋標題、內容或標籤..." autocomplete="off" />
+        </div>
+
+        <div class="sidebar-section">
+          <h2>自動分類</h2>
+          <nav id="categoryTabs" class="nav-list" aria-label="類型篩選">
+            <button class="nav-item active" data-category="all">
+              <span>全部項目</span>
+              <span class="badge" id="count-all">0</span>
+            </button>
+            <button class="nav-item" data-category="image">
+              <span>螢幕截圖 / 圖片</span>
+              <span class="badge" id="count-image">0</span>
+            </button>
+            <button class="nav-item" data-category="code">
+              <span>程式碼片段</span>
+              <span class="badge" id="count-code">0</span>
+            </button>
+            <button class="nav-item" data-category="link">
+              <span>網址書籤</span>
+              <span class="badge" id="count-link">0</span>
+            </button>
+            <button class="nav-item" data-category="text">
+              <span>文字筆記</span>
+              <span class="badge" id="count-text">0</span>
+            </button>
+            <button class="nav-item" data-category="pinned">
+              <span>已釘選重點</span>
+              <span class="badge" id="count-pinned">0</span>
+            </button>
+          </nav>
+        </div>
+
+        <div class="sidebar-section">
+          <h2>標籤雲</h2>
+          <div id="tagCloud" class="tag-cloud">
+            <span class="empty-tags">尚無標籤</span>
+          </div>
+        </div>
+
+        <div class="sidebar-section stats-card">
+          <h2>本地儲存狀態</h2>
+          <p id="storageSummary">已收錄 0 筆資料</p>
+          <p class="hint-text">支援 IndexedDB 離線保存，關閉分頁資料仍會保留。</p>
+        </div>
+      </aside>
+
+      <main class="content-area">
+        <div class="toolbar-row">
+          <div id="activeFilterLabel" class="filter-status">顯示：全部項目</div>
+          <div class="sort-controls">
+            <label for="sortSelect">排序：</label>
+            <select id="sortSelect">
+              <option value="newest">最新建立</option>
+              <option value="oldest">最舊優先</option>
+              <option value="pinned">釘選優先</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="cardsGrid" class="cards-grid"></div>
+
+        <div id="emptyState" class="empty-state hidden">
+          <div class="empty-icon">📋</div>
+          <h3>目前沒有符合的項目</h3>
+          <p>試著按下 <span class="kbd">Ctrl + V</span> 貼上截圖或文字、點擊上方「擷取螢幕」，或按「載入範例」立即體驗功能。</p>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- 截圖標註與匯出編輯器 Modal -->
+  <div id="imageModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modalImageTitle">
+    <div class="modal-backdrop" data-close-modal="imageModal"></div>
+    <div class="modal-dialog modal-xl">
+      <div class="modal-header">
+        <div>
+          <h3 id="modalImageTitle">截圖標註與格式匯出工作台</h3>
+          <p class="modal-subtitle">畫框、箭頭、馬賽克遮罩敏感資訊，並以自訂檔名匯出 PNG / JPG</p>
+        </div>
+        <button class="btn-icon" data-close-modal="imageModal" aria-label="關閉">✕</button>
+      </div>
+
+      <div class="editor-toolbar">
+        <div class="tool-group" role="group" aria-label="繪圖工具">
+          <button class="tool-btn active" data-tool="select">檢視</button>
+          <button class="tool-btn" data-tool="rect">框線</button>
+          <button class="tool-btn" data-tool="arrow">箭頭</button>
+          <button class="tool-btn" data-tool="pen">畫筆</button>
+          <button class="tool-btn" data-tool="blur">馬賽克打碼</button>
+          <button class="tool-btn" data-tool="text">加文字</button>
+        </div>
+
+        <div class="tool-group">
+          <label class="inline-label">顏色
+            <input id="editorColor" type="color" value="#ef4444" />
+          </label>
+          <label class="inline-label">粗細
+            <input id="editorSize" type="range" min="2" max="24" value="4" />
+          </label>
+        </div>
+
+        <div class="tool-group">
+          <button id="btnUndoCanvas" class="btn btn-sm btn-ghost">復原</button>
+          <button id="btnResetCanvas" class="btn btn-sm btn-ghost">重設原圖</button>
+          <button id="btnSaveCanvas" class="btn btn-sm btn-primary">儲存修改</button>
+        </div>
+      </div>
+
+      <div class="editor-body">
+        <div class="canvas-stage">
+          <canvas id="annotationCanvas"></canvas>
+        </div>
+
+        <aside class="export-panel">
+          <h4>單張圖片匯出設定</h4>
+          <label class="field-label">
+            <span>匯出檔名（不含副檔名）</span>
+            <input id="exportFilename" type="text" placeholder="例如：11201234_王小明" />
+          </label>
+
+          <label class="field-label">
+            <span>圖片格式</span>
+            <select id="exportFormat">
+              <option value="image/png">PNG（無損畫質，推薦）</option>
+              <option value="image/jpeg">JPG（檔案較小）</option>
+            </select>
+          </label>
+
+          <label class="checkbox-row">
+            <input id="exportAddBanner" type="checkbox" />
+            <span>在底部加上專案／網址資訊條</span>
+          </label>
+
+          <label id="bannerTextWrap" class="field-label hidden">
+            <span>資訊條文字（可填 GitHub 網址）</span>
+            <input id="exportBannerText" type="text" placeholder="https://github.com/你的帳號/專案名稱" />
+          </label>
+
+          <div class="export-actions">
+            <button id="btnDownloadImage" class="btn btn-primary btn-block">下載圖片檔</button>
+            <button id="btnCopyImage" class="btn btn-secondary btn-block">複製圖片到剪貼簿</button>
+          </div>
+
+          <hr class="divider" />
+
+          <h4>項目中繼資料</h4>
+          <label class="field-label">
+            <span>標題</span>
+            <input id="editImageTitle" type="text" />
+          </label>
+          <label class="field-label">
+            <span>標籤（以逗號分隔）</span>
+            <input id="editImageTags" type="text" placeholder="截圖, 作業" />
+          </label>
+          <button id="btnUpdateImageMeta" class="btn btn-ghost btn-block">更新標題與標籤</button>
+        </aside>
+      </div>
+    </div>
+  </div>
+
+  <!-- 新增/檢視文字筆記 Modal -->
+  <div id="noteModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="noteModalTitle">
+    <div class="modal-backdrop" data-close-modal="noteModal"></div>
+    <div class="modal-dialog modal-md">
+      <div class="modal-header">
+        <h3 id="noteModalTitle">新增 / 編輯筆記</h3>
+        <button class="btn-icon" data-close-modal="noteModal" aria-label="關閉">✕</button>
+      </div>
+      <form id="noteForm" class="note-form">
+        <input id="noteId" type="hidden" />
+        <label class="field-label">
+          <span>標題</span>
+          <input id="noteTitle" type="text" placeholder="輸入標題（留空會自動產生）" />
+        </label>
+        <label class="field-label">
+          <span>類型</span>
+          <select id="noteType">
+            <option value="auto">自動偵測（連結 / 程式碼 / 文字）</option>
+            <option value="text">文字筆記</option>
+            <option value="code">程式碼片段</option>
+            <option value="link">網址書籤</option>
+          </select>
+        </label>
+        <label class="field-label">
+          <span>內容</span>
+          <textarea id="noteContent" rows="8" placeholder="貼上或輸入文字、程式碼、網址..." required></textarea>
+        </label>
+        <label class="field-label">
+          <span>標籤（以逗號分隔）</span>
+          <input id="noteTags" type="text" placeholder="例如：筆記, 靈感, Python" />
+        </label>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" data-close-modal="noteModal">取消</button>
+          <button type="submit" class="btn btn-primary">儲存項目</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast 通知 -->
+  <div id="toastContainer" class="toast-container" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
